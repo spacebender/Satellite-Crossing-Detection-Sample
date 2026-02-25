@@ -1,0 +1,180 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+
+\title{Procedure for Satellite Crossing and Visibility Analysis}
+\author{Gilari Ramachandran Karthi}
+\date{25-Feb-2026}
+
+\begin{document}
+	
+	\maketitle
+	
+	\section{Coordinate Reference Frame}
+	
+	All computations are performed in the \textbf{True Equator Mean Equinox (TEME)} inertial frame to ensure consistency between:
+	
+	\begin{itemize}
+		\item Target propagation using SGP4 from TLE,
+		\item Tracker propagation using Keplerian elements transformed to TEME.
+	\end{itemize}
+	
+	The state vectors are defined as:
+	
+	\begin{equation}
+		\mathbf{r} = [x, y, z]^T, \quad 
+		\mathbf{v} = [\dot{x}, \dot{y}, \dot{z}]^T
+	\end{equation}
+	
+	\section{Relative Geometry and FOV Crossing}
+	
+	\subsection{Relative Position Vector}
+	
+	The relative position vector from Tracker to Target is:
+	
+	\begin{equation}
+		\mathbf{d}(t) = \mathbf{r}_{tgt}(t) - \mathbf{r}_{trk}(t)
+	\end{equation}
+	
+	The relative range is:
+	
+	\begin{equation}
+		\rho(t) = \|\mathbf{d}(t)\|
+	\end{equation}
+	
+	\subsection{Field-of-View (FOV) Condition}
+	
+	The camera boresight is aligned with the Tracker velocity vector $\mathbf{v}_{trk}$.
+	
+	The angular separation between the boresight and the target direction is:
+	
+	\begin{equation}
+		\cos \theta = 
+		\frac{\mathbf{d} \cdot \mathbf{v}_{trk}}
+		{\|\mathbf{d}\| \, \|\mathbf{v}_{trk}\|}
+	\end{equation}
+	
+	A \textbf{crossing event} is detected when:
+	
+	\begin{equation}
+		\theta \leq \frac{FOV}{2} = 15^\circ
+	\end{equation}
+	
+	\section{Visibility Conditions}
+	
+	A target is considered \textbf{visible/detectable} only if all physical constraints are satisfied simultaneously.
+	
+	\subsection{Range Constraint}
+	
+	\begin{equation}
+		\rho(t) < R_{max}
+	\end{equation}
+	
+	where:
+	
+	\begin{equation}
+		R_{max} = 1000 \text{ km}
+	\end{equation}
+	
+	\subsection{Illumination (Sunlight) Condition}
+	
+	Let:
+	
+	\begin{itemize}
+		\item $\mathbf{r}_{tgt}$ = Earth $\rightarrow$ Target
+		\item $\mathbf{r}_{sun}$ = Earth $\rightarrow$ Sun
+		\item $R_E$ = Earth radius
+	\end{itemize}
+	
+	Define:
+	
+	\begin{equation}
+		f_{e,1} := (\mathbf{r}_{tgt} \cdot \mathbf{r}_{sun} > 0)
+	\end{equation}
+	
+	\begin{equation}
+		f_{e,2} := 
+		\left[
+		\frac{(\mathbf{r}_{tgt} \cdot \mathbf{r}_{sun})^2}
+		{\|\mathbf{r}_{sun}\|^2}
+		- \|\mathbf{r}_{tgt}\|^2
+		+ R_E^2 < 0
+		\right]
+	\end{equation}
+	
+	The target is sunlit if:
+	
+	\begin{equation}
+		f_e = f_{e,1} \wedge f_{e,2}
+	\end{equation}
+	
+	This represents a cylindrical Earth shadow model.
+	
+	\subsection{Above-Horizon (Line-of-Sight) Condition}
+	
+	To ensure Earth does not block the line-of-sight between Tracker and Target:
+	
+	Let:
+	
+	\begin{equation}
+		\mathbf{d} = \mathbf{r}_{tgt} - \mathbf{r}_{trk}
+	\end{equation}
+	
+	\begin{equation}
+		r_{o,e} = \sqrt{\|\mathbf{r}_{trk}\|^2 - R_E^2}
+	\end{equation}
+	
+	The above-horizon condition is:
+	
+	\begin{equation}
+		f_o := 
+		\left(
+		\|\mathbf{d}\| \, r_{o,e} + \mathbf{d} \cdot \mathbf{r}_{trk} > 0
+		\right)
+	\end{equation}
+	
+	This ensures that the Target is not geometrically occluded by Earth.
+	
+	\section{Final Detection Condition}
+	
+	A target is considered \textbf{detectable} if:
+	
+	\begin{equation}
+		f_{vis} = 
+		(\theta \leq 15^\circ)
+		\wedge
+		(\rho < 1000)
+		\wedge
+		f_e
+		\wedge
+		f_o
+	\end{equation}
+	
+	\section{Time Propagation and Event Grouping}
+	
+	The simulation is performed over:
+	
+	\begin{equation}
+		T = 86400 \text{ s}
+	\end{equation}
+	
+	with discrete time steps:
+	
+	\begin{equation}
+		t_{n+1} = t_n + \Delta t
+	\end{equation}
+	
+	where $\Delta t = 5$ s.
+	
+	Crossing timestamps are recorded whenever the FOV condition is satisfied. Consecutive timestamps separated by exactly $\Delta t$ are grouped into continuous intervals:
+	
+	\begin{equation}
+		[t_{start}, t_{end}]
+	\end{equation}
+	
+	representing one geometric crossing event.
+	
+\end{document}

@@ -1,0 +1,4 @@
+numpy>=1.23            
+astropy>=5.0               
+hapsira           
+sgp4>=2.23             
