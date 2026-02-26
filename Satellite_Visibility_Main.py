@@ -12,26 +12,22 @@ Sample Output:
     
     Simulating 24 hours...
     ------------------------------
-    Detected 159 crossing moments.
-    First Crossing: 2025-09-01 02:03:25+00:00
-    Last Crossing: 2025-09-01 21:50:55+00:00
+    Detected 1 crossing moments.
+    First Crossing: 2025-09-01 00:29:35+00:00
+    Last Crossing: 2025-09-01 00:29:35+00:00
     ------------------------------
-    No visible events detected.
+    Detected 1 visible moments.
+    Visible at 2025-09-01 00:29:35+00:00 | Distance: 116.43 km
 
     ========================================
     CROSSING INTERVALS
     ========================================
-    Interval: 02:03:25 to 02:05:30
-    Interval: 06:00:25 to 06:02:40
-    Interval: 09:57:35 to 09:59:40
-    Interval: 13:54:40 to 13:56:50
-    Interval: 17:51:45 to 17:53:50
-    Interval: 21:48:50 to 21:50:55
+    Interval: 00:29:35 to 00:29:35
 
     ========================================
-    VISIBLE EVENTS (<1000km & SUNLIT & Above Horizon)
+    VISIBLE INTERVALS (<1000km & SUNLIT & Above Horizon)
     ========================================
-    No events met detection criteria.
+    Detected: 00:29:35 to 00:29:35
  
 **************************************************************************************************
 Note:
@@ -133,13 +129,13 @@ jd_obj_at_epoch, fr_obj_at_epoch   = jday(year, month, day, hour, minute, second
 
 e2, r_obj_at_epoch, v_obj_at_epoch = obj.sgp4(jd_obj_at_epoch,fr_obj_at_epoch)
 
-# target epoch 2025-09-01 00:00:00 UTC (based on tracker)
-target_time = datetime(2025, 9, 1, 00, 00, 0, tzinfo=timezone.utc)
-jd_obj_tgt_epoch, fr_obj_tgt_epoch = jday(target_time.year, target_time.month, target_time.day, 
-                                          target_time.hour, target_time.minute, target_time.second)
+# start epoch 2025-09-01 00:00:00 UTC (based on tracker)
+epoch_start = datetime(2025, 9, 1, 00, 00, 0, tzinfo=timezone.utc)
+jd_obj_tgt_epoch, fr_obj_tgt_epoch = jday(epoch_start.year, epoch_start.month, epoch_start.day, 
+                                          epoch_start.hour, epoch_start.minute, epoch_start.second)
 
 
-# Position and Velocity of the target at the tracker epoch
+# Position and Velocity of the target at the tracker start epoch
 e2, robj_tgt_epoch, vobj_tgt_epoch = obj.sgp4(jd_obj_tgt_epoch, fr_obj_tgt_epoch)
 
 # ----------------------------Tracker Details from the Orbital Elements ----------------------------- 
@@ -153,7 +149,7 @@ ss_tracker = Orbit.from_classical(
     RAAN_track_tgt_epoch * u.deg,
     Argp__track_tgt_epoch * u.deg,
     MeanAn__track_tgt_epoch * u.deg,
-    epoch=Time(target_time)
+    epoch=Time(epoch_start)
 )
 
 # --- ---------------------------------- Propagation  Loop ------------------------------------------
@@ -163,29 +159,39 @@ steps = int((duration_hrs * 3600) / step_sec)
 
 crossing_events = []
 visible_events = []
-
-
+r_trk_list = []
+r_tgt_list = []
+rel_dist_list = []
 
 print(f"\nSimulating {duration_hrs} hours...")
-
+epoch_start_dt = epoch_start  
+epoch_start_ast = Time(epoch_start_dt) #for astropy mode
+  
 for i in range(steps):
-    current_time = target_time + timedelta(seconds=i * step_sec)
+    print(f"Step {i+1}/{steps}  |  Progress: {100*(i+1)/steps:.2f}%")
+    current_time = epoch_start_dt + timedelta(seconds=i * step_sec)
     astropy_time = Time(current_time)
     
     # Propagate Tracker (hapsira)
     
-    state_trk = ss_tracker.propagate(i * u.s)
-    r_trk, v_trk = state_to_teme(state_trk, astropy_time)
+    dt = (astropy_time - epoch_start_ast).to(u.s)
+    state_trk = ss_tracker.propagate(dt)
+
+    r_trk, v_trk = state_to_teme(state_trk, astropy_time) # tracker states
     
     # Propagate Object (SGP4)
     
     jd, fr = jday(current_time.year, current_time.month, current_time.day, 
                   current_time.hour, current_time.minute, current_time.second)
-    error, r_tgt, v_tgt = obj.sgp4(jd, fr) # TEME frame (km)
+    error, r_tgt, v_tgt = obj.sgp4(jd, fr) # object states 
+    
    
     #-------Relative Position--------- ---
     rel_pos = np.array(r_tgt) - np.array(r_trk)
+    
     dist = np.linalg.norm(rel_pos)
+    
+    
     
     # Angle between Tracker Velocity and Relative Position
     unit_v_trk = v_trk / np.linalg.norm(v_trk)
@@ -200,11 +206,15 @@ for i in range(steps):
         # ---  Visibility/Detection  ---
         """for the visibility/detection all A, B, C muct hold """
         if dist < 1000: # A) Proximity
-            sun_pos = get_sun(astropy_time).transform_to(TEME(obs_time=astropy_time)).cartesian.xyz.to(u.km).value
+            sun_pos = get_sun(astropy_time).transform_to(TEME(obstime=astropy_time)).cartesian.xyz.to(u.km).value
             sunlit = is_sunlit(r_tgt, sun_pos, R_EARTH_KM) # B) Sun-lit
             above_horizon = is_above_horizon(r_trk, r_tgt, R_EARTH_KM) # C) Above Horizon
             if sunlit and above_horizon:
                 visible_events.append((current_time, dist))
+                
+    r_trk_list.append(np.array(r_trk, dtype=float)) # Accumulate the tracker position
+    r_tgt_list.append(np.array(r_tgt, dtype=float)) # Accumulate the object position
+    rel_dist_list.append(np.array(r_tgt, dtype=float)) # Accumulate the relative distance
                 
 # ---------------- Group Intervals --------------------------------------------
 crossing_intervals = group_events(crossing_events, step_sec)
@@ -238,7 +248,7 @@ for start, end in crossing_intervals:
     print(f"Interval: {start.strftime('%H:%M:%S')} to {end.strftime('%H:%M:%S')}")
 
 print("\n" + "="*40)
-print("VISIBLE EVENTS (<1000km & SUNLIT & Above Horizon)")
+print("VISIBLE INTERVALS (<1000km & SUNLIT & Above Horizon)")
 print("="*40)
 if not visible_intervals:
     print("No events met detection criteria.")
